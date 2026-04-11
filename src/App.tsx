@@ -15,6 +15,22 @@ const EMPTY_STATE: PomodoroState = {
 
 type SummaryRange = "day" | "week" | "month" | "all";
 
+function normalizeFocusedSeconds(raw: unknown, startedAt: Date, endedAt: Date): number | null {
+  const numeric = typeof raw === "number" ? raw : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  const focusedSeconds = Math.max(1, Math.round(numeric));
+  const elapsedSeconds = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
+
+  if (focusedSeconds === 1 && elapsedSeconds > 60) {
+    return elapsedSeconds;
+  }
+
+  return focusedSeconds;
+}
+
 function normalizeTask(raw: unknown): PomodoroTask | null {
   if (!raw || typeof raw !== "object") {
     return null;
@@ -55,7 +71,8 @@ function normalizeSession(raw: unknown): PomodoroSession | null {
     return null;
   }
 
-  if (!Number.isFinite(maybe.focusedSeconds) || (maybe.focusedSeconds as number) <= 0) {
+  const focusedSeconds = normalizeFocusedSeconds(maybe.focusedSeconds, started, ended);
+  if (focusedSeconds === null) {
     return null;
   }
 
@@ -63,7 +80,7 @@ function normalizeSession(raw: unknown): PomodoroSession | null {
     startedAt: started.toISOString(),
     endedAt: ended.toISOString(),
     taskId: typeof maybe.taskId === "string" ? maybe.taskId : null,
-    focusedSeconds: Math.max(1, Math.round(maybe.focusedSeconds as number))
+    focusedSeconds
   };
 }
 
@@ -412,14 +429,17 @@ export default function App() {
 
   function start() {
     setError(null);
-    if (!Number.isFinite(remainingSeconds) || remainingSeconds <= 0) {
-      setRemainingSeconds(durationFor(mode, state));
+    const nextRemainingSeconds =
+      !Number.isFinite(remainingSeconds) || remainingSeconds <= 0 ? durationFor(mode, state) : remainingSeconds;
+
+    if (nextRemainingSeconds !== remainingSeconds) {
+      setRemainingSeconds(nextRemainingSeconds);
     }
 
     if (mode === "focus" && !focusStartedAtRef.current) {
       focusStartedAtRef.current = new Date().toISOString();
       sessionTaskIdRef.current = state.activeTaskId;
-      sessionFocusedSecondsRef.current = Math.max(1, remainingSeconds);
+      sessionFocusedSecondsRef.current = Math.max(1, nextRemainingSeconds);
     }
 
     setIsRunning(true);

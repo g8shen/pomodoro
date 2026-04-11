@@ -1,17 +1,14 @@
-# Minimal ASCII Pomodoro
+# Minimal Pomodoro
 
-A local-first Pomodoro app with a minimal dark interface, ASCII header styling, 25/5 mode switching, and JSON file persistence.
+A local-first Pomodoro app with a minimal dark interface, task tracking, configurable focus/rest durations, and JSON file persistence.
 
 ## Features
 
-- Focus/rest timer loop with customizable durations (default `25:00` focus -> `05:00` rest, auto-switch)
-- Controls: start, pause, reset, skip
-- Session tracking: increments only after a full focus completion
-- Daily target management (pomodoros/day)
-- Daily progress view (`completed today / target`) with progress bar
+- Focus/rest timer loop with customizable durations and optional auto-switch
+- Controls for start, pause, reset, and mode switching
+- Session history with per-task assignment and deletion
+- Daily target management with progress and streak tracking
 - Local JSON persistence (no DB, no auth)
-- Optional completion sound toggle
-- Daily streak indicator (consecutive days reaching target)
 
 ## Project Structure
 
@@ -26,7 +23,12 @@ A local-first Pomodoro app with a minimal dark interface, ASCII header styling, 
 - Path: `data/pomodoro-data.json`
 - Shape:
   - `targetPerDay: number`
-  - `sessions: string[]` (ISO timestamps)
+  - `focusMinutes: number`
+  - `restMinutes: number`
+  - `autoSwitch: boolean`
+  - `activeTaskId: string | null`
+  - `tasks: { id: string; name: string; createdAt: string }[]`
+  - `sessions: { startedAt: string; endedAt: string; taskId: string | null; focusedSeconds: number }[]`
 
 ## Run Locally
 
@@ -60,6 +62,11 @@ Edit or clear `data/pomodoro-data.json`, for example:
 ```json
 {
   "targetPerDay": 8,
+  "focusMinutes": 25,
+  "restMinutes": 5,
+  "autoSwitch": true,
+  "activeTaskId": null,
+  "tasks": [],
   "sessions": []
 }
 ```

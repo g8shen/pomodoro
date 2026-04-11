@@ -40,6 +40,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataFilePath = path.resolve(__dirname, "../data/pomodoro-data.json");
 
+function normalizeFocusedSeconds(value: unknown, startedAt: Date, endedAt: Date): number | null {
+  const numeric = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  const focusedSeconds = Math.max(1, Math.round(numeric));
+  const elapsedSeconds = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
+
+  if (focusedSeconds === 1 && elapsedSeconds > 60) {
+    return elapsedSeconds;
+  }
+
+  return focusedSeconds;
+}
+
 function clampMinuteValue(value: unknown, fallback: number): number {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0 || numeric > 180) {
@@ -88,7 +104,8 @@ function normalizeSession(input: unknown): PomodoroSession | null {
     return null;
   }
 
-  if (!Number.isFinite(maybe.focusedSeconds) || (maybe.focusedSeconds as number) <= 0) {
+  const focusedSeconds = normalizeFocusedSeconds(maybe.focusedSeconds, started, ended);
+  if (focusedSeconds === null) {
     return null;
   }
 
@@ -96,7 +113,7 @@ function normalizeSession(input: unknown): PomodoroSession | null {
     startedAt: started.toISOString(),
     endedAt: ended.toISOString(),
     taskId: typeof maybe.taskId === "string" ? maybe.taskId : null,
-    focusedSeconds: Math.max(1, Math.round(maybe.focusedSeconds as number))
+    focusedSeconds
   };
 }
 
