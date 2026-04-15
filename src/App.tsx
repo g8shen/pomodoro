@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Input, Progress } from "./components/ui";
-import { calculateStreak, formatTime, isSessionToday, minutesToSeconds } from "./lib/time";
+import { calculateStreak, formatMinutesForDisplay, formatTime, isSessionToday, minutesToSeconds } from "./lib/time";
 import type { Mode, PomodoroSession, PomodoroState, PomodoroTask } from "./types";
 
 const EMPTY_STATE: PomodoroState = {
@@ -375,7 +375,8 @@ export default function App() {
   const taskById = useMemo(() => new Map(state.tasks.map((task) => [task.id, task])), [state.tasks]);
   const activeTask = state.activeTaskId ? taskById.get(state.activeTaskId) ?? null : null;
 
-  const completedToday = useMemo(() => state.sessions.filter(isSessionToday).length, [state.sessions]);
+  const todaySessions = useMemo(() => state.sessions.filter(isSessionToday), [state.sessions]);
+  const completedToday = todaySessions.length;
   const progressRatio = useMemo(() => {
     if (state.targetPerDay < 1) {
       return 0;
@@ -393,9 +394,9 @@ export default function App() {
     [state.sessions]
   );
 
-  const totalFocusedMinutes = useMemo(() => {
-    return state.sessions.reduce((sum, session) => sum + focusedMinutes(session), 0);
-  }, [state.sessions]);
+  const focusedTodayMinutes = useMemo(() => {
+    return todaySessions.reduce((sum, session) => sum + focusedMinutes(session), 0);
+  }, [todaySessions]);
 
   const summaryRows = useMemo(() => {
     const start = rangeStart(summaryRange);
@@ -632,6 +633,16 @@ export default function App() {
               {modeToggleLabel}
             </Button>
           </div>
+          <div className="grid grid-cols-1 gap-3 border-t border-zinc-800 pt-4 text-left sm:grid-cols-2">
+            <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Today&apos;s sessions</p>
+              <p className="mt-1 font-mono text-xl text-zinc-100">{completedToday}</p>
+            </div>
+            <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Today&apos;s focus</p>
+              <p className="mt-1 font-mono text-xl text-zinc-100">{formatMinutesForDisplay(focusedTodayMinutes)}</p>
+            </div>
+          </div>
         </Card>
 
         <Card className="space-y-4">
@@ -664,9 +675,8 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-between text-sm text-zinc-400">
-            <span>Total sessions: {state.sessions.length}</span>
-            <span>Total focused: {totalFocusedMinutes} min</span>
-            <span>Streak: {streak} day(s)</span>
+            <span>Streak</span>
+            <span>{streak} day(s)</span>
           </div>
 
           <label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -756,7 +766,7 @@ export default function App() {
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
                     {row.name}
                   </div>
-                  <span className="font-mono text-zinc-300">{row.minutes} min</span>
+                  <span className="font-mono text-zinc-300">{formatMinutesForDisplay(row.minutes)}</span>
                 </div>
               ))}
             </div>

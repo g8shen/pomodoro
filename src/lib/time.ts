@@ -1,5 +1,13 @@
 import type { PomodoroSession } from "../types";
 
+function localDayKey(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function minutesToSeconds(minutes: number): number {
   return Math.max(1, Math.round(minutes * 60));
 }
@@ -13,15 +21,20 @@ export function formatTime(totalSeconds: number): string {
   return `${minutes}:${seconds}`;
 }
 
-export function isSessionToday(session: PomodoroSession): boolean {
-  const date = new Date(session.endedAt);
-  const now = new Date();
+export function formatMinutesForDisplay(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
 
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+}
+
+export function isSessionToday(session: PomodoroSession): boolean {
+  return localDayKey(session.endedAt) === localDayKey(new Date());
 }
 
 export function calculateStreak(sessions: PomodoroSession[], targetPerDay: number): number {
@@ -32,7 +45,7 @@ export function calculateStreak(sessions: PomodoroSession[], targetPerDay: numbe
   const countsByDay = new Map<string, number>();
 
   for (const session of sessions) {
-    const day = new Date(session.endedAt).toISOString().slice(0, 10);
+    const day = localDayKey(session.endedAt);
     countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
   }
 
@@ -40,8 +53,12 @@ export function calculateStreak(sessions: PomodoroSession[], targetPerDay: numbe
   const cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
 
+  if ((countsByDay.get(localDayKey(cursor)) ?? 0) < targetPerDay) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
   while (true) {
-    const dayKey = cursor.toISOString().slice(0, 10);
+    const dayKey = localDayKey(cursor);
     const count = countsByDay.get(dayKey) ?? 0;
     if (count >= targetPerDay) {
       streak += 1;
