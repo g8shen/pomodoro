@@ -1,1 +1,32 @@
-data/pomodoro-data.json
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# tsc -b emits JS/d.ts next to these sources (tsconfig.node.json)
+server/*.js
+server/*.d.ts
+vite.config.js
+vite.config.d.ts
+
+# Personal app data
+data/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
