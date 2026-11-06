@@ -1,6 +1,6 @@
 # Minimal Pomodoro
 
-A local-first Pomodoro app with a minimal dark interface, task tracking, configurable focus/rest durations, and JSON file persistence.
+A local-first Pomodoro app with a minimal dark interface, task tracking, configurable focus/rest durations, and browser `localStorage` persistence. Fully static — deployable to Vercel or any static host.
 
 ## Features
 
@@ -8,19 +8,18 @@ A local-first Pomodoro app with a minimal dark interface, task tracking, configu
 - Controls for start, pause, reset, and mode switching
 - Session history with per-task assignment and deletion
 - Daily target management with progress and streak tracking
-- Local JSON persistence (no DB, no auth)
+- Local persistence in the browser (no server, no DB, no auth)
 
 ## Project Structure
 
 - `src/App.tsx`: UI and timer/session logic
 - `src/components/ui.tsx`: lightweight shadcn-style UI primitives
 - `src/lib/time.ts`: time formatting and streak/day helpers
-- `server/index.ts`: local API for reading/writing persisted state
-- `data/pomodoro-data.json`: persisted app state
+- `src/lib/storage.ts`: reads/writes app state to `localStorage`
 
-## Data File
+## Data
 
-- Path: `data/pomodoro-data.json`
+- Stored in `localStorage` under the key `pomodoro-data` (per browser, per domain)
 - Shape:
   - `targetPerDay: number`
   - `focusMinutes: number`
@@ -38,7 +37,7 @@ A local-first Pomodoro app with a minimal dark interface, task tracking, configu
 npm install
 ```
 
-2. Start web + API dev servers:
+2. Start the dev server:
 
 ```bash
 npm run dev
@@ -55,18 +54,18 @@ npm run build
 npm run preview
 ```
 
+## Deploy (Vercel)
+
+```bash
+npm i -g vercel
+vercel        # preview
+vercel --prod # production
+```
+
 ## Reset Data
 
-Edit or clear `data/pomodoro-data.json`, for example:
+In the browser devtools console:
 
-```json
-{
-  "targetPerDay": 8,
-  "focusMinutes": 25,
-  "restMinutes": 5,
-  "autoSwitch": true,
-  "activeTaskId": null,
-  "tasks": [],
-  "sessions": []
-}
+```js
+localStorage.removeItem("pomodoro-data")
 ```

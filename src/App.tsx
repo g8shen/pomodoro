@@ -1,214 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Input, Progress } from "./components/ui";
 import { calculateStreak, formatMinutesForDisplay, formatTime, isSessionToday, minutesToSeconds } from "./lib/time";
+import {
+  EMPTY_STATE,
+  addSession,
+  addTask,
+  deleteSession,
+  deleteSessions,
+  exportData,
+  importData,
+  readState,
+  removeTask,
+  setActiveTask,
+  updateAutoSwitch,
+  updateDurations,
+  updateSessionTask,
+  updateTarget
+} from "./lib/storage";
 import type { Mode, PomodoroSession, PomodoroState, PomodoroTask } from "./types";
-
-const EMPTY_STATE: PomodoroState = {
-  targetPerDay: 8,
-  focusMinutes: 25,
-  restMinutes: 5,
-  autoSwitch: true,
-  activeTaskId: null,
-  tasks: [],
-  sessions: []
-};
 
 type SummaryRange = "day" | "week" | "month" | "all";
 
-function normalizeFocusedSeconds(raw: unknown, startedAt: Date, endedAt: Date): number | null {
-  const numeric = typeof raw === "number" ? raw : Number.NaN;
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  const focusedSeconds = Math.max(1, Math.round(numeric));
-  const elapsedSeconds = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
-
-  if (focusedSeconds === 1 && elapsedSeconds > 60) {
-    return elapsedSeconds;
-  }
-
-  return focusedSeconds;
-}
-
-function normalizeTask(raw: unknown): PomodoroTask | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const maybe = raw as Partial<PomodoroTask>;
-  if (typeof maybe.id !== "string" || typeof maybe.name !== "string" || typeof maybe.createdAt !== "string") {
-    return null;
-  }
-
-  const createdAt = new Date(maybe.createdAt);
-  if (Number.isNaN(createdAt.getTime())) {
-    return null;
-  }
-
-  const name = maybe.name.trim();
-  if (!name) {
-    return null;
-  }
-
-  return {
-    id: maybe.id,
-    name,
-    createdAt: createdAt.toISOString()
-  };
-}
-
-function normalizeSession(raw: unknown): PomodoroSession | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const maybe = raw as Partial<PomodoroSession>;
-  const started = typeof maybe.startedAt === "string" ? new Date(maybe.startedAt) : null;
-  const ended = typeof maybe.endedAt === "string" ? new Date(maybe.endedAt) : null;
-
-  if (!started || !ended || Number.isNaN(started.getTime()) || Number.isNaN(ended.getTime())) {
-    return null;
-  }
-
-  const focusedSeconds = normalizeFocusedSeconds(maybe.focusedSeconds, started, ended);
-  if (focusedSeconds === null) {
-    return null;
-  }
-
-  return {
-    startedAt: started.toISOString(),
-    endedAt: ended.toISOString(),
-    taskId: typeof maybe.taskId === "string" ? maybe.taskId : null,
-    focusedSeconds
-  };
-}
-
-function normalizeState(raw: unknown): PomodoroState {
-  const maybe = raw as Partial<PomodoroState>;
-  const tasks = Array.isArray(maybe?.tasks)
-    ? maybe.tasks.map((task) => normalizeTask(task)).filter((task): task is PomodoroTask => task !== null)
-    : [];
-  const taskIds = new Set(tasks.map((task) => task.id));
-
-  const sessions = Array.isArray(maybe?.sessions)
-    ? maybe.sessions
-        .map((s) => normalizeSession(s))
-        .filter((s): s is PomodoroSession => s !== null)
-        .map((session) => ({ ...session, taskId: session.taskId && taskIds.has(session.taskId) ? session.taskId : null }))
-    : [];
-
-  const targetPerDay = Number.isInteger(maybe?.targetPerDay) && (maybe?.targetPerDay ?? 0) > 0 ? (maybe.targetPerDay as number) : EMPTY_STATE.targetPerDay;
-  const focusMinutes = Number.isFinite(maybe?.focusMinutes) && (maybe?.focusMinutes ?? 0) > 0 ? (maybe.focusMinutes as number) : EMPTY_STATE.focusMinutes;
-  const restMinutes = Number.isFinite(maybe?.restMinutes) && (maybe?.restMinutes ?? 0) > 0 ? (maybe.restMinutes as number) : EMPTY_STATE.restMinutes;
-  const autoSwitch = typeof maybe?.autoSwitch === "boolean" ? maybe.autoSwitch : EMPTY_STATE.autoSwitch;
-  const activeTaskId = typeof maybe?.activeTaskId === "string" && taskIds.has(maybe.activeTaskId) ? maybe.activeTaskId : null;
-
-  return { targetPerDay, focusMinutes, restMinutes, autoSwitch, activeTaskId, tasks, sessions };
-}
-
-async function parseResponse(res: Response): Promise<PomodoroState> {
-  const body = (await res.json().catch(() => null)) as { error?: string } | unknown;
-  if (!res.ok) {
-    const message = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "Request failed.";
-    throw new Error(message);
-  }
-  return normalizeState(body);
-}
-
-async function readState(): Promise<PomodoroState> {
-  const res = await fetch("/api/state");
-  return parseResponse(res);
-}
-
-async function updateTarget(targetPerDay: number): Promise<PomodoroState> {
-  const res = await fetch("/api/target", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ targetPerDay })
-  });
-  return parseResponse(res);
-}
-
-async function updateDurations(focusMinutes: number, restMinutes: number): Promise<PomodoroState> {
-  const res = await fetch("/api/durations", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ focusMinutes, restMinutes })
-  });
-  return parseResponse(res);
-}
-
-async function addTask(name: string): Promise<PomodoroState> {
-  const res = await fetch("/api/task", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name })
-  });
-  return parseResponse(res);
-}
-
-async function setActiveTask(activeTaskId: string | null): Promise<PomodoroState> {
-  const res = await fetch("/api/task/active", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ activeTaskId })
-  });
-  return parseResponse(res);
-}
-
-async function removeTask(taskId: string): Promise<PomodoroState> {
-  const res = await fetch("/api/task/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ taskId })
-  });
-  return parseResponse(res);
-}
-
-async function addSession(
-  startedAt: string,
-  endedAt: string,
-  taskId: string | null,
-  focusedSeconds: number
-): Promise<PomodoroState> {
-  const res = await fetch("/api/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ startedAt, endedAt, taskId, focusedSeconds })
-  });
-  return parseResponse(res);
-}
-
-async function deleteSession(startedAt: string, endedAt: string): Promise<PomodoroState> {
-  const res = await fetch("/api/session/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ startedAt, endedAt })
-  });
-  return parseResponse(res);
-}
-
-async function updateSessionTask(
-  startedAt: string,
-  endedAt: string,
-  taskId: string | null
-): Promise<PomodoroState> {
-  const res = await fetch("/api/session/task", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ startedAt, endedAt, taskId })
-  });
-  return parseResponse(res);
-}
-
-async function updateAutoSwitch(autoSwitch: boolean): Promise<PomodoroState> {
-  const res = await fetch("/api/auto-switch", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ autoSwitch })
-  });
-  return parseResponse(res);
+function sessionKey(session: PomodoroSession): string {
+  return `${session.startedAt}|${session.endedAt}`;
 }
 
 function durationFor(mode: Mode, appState: PomodoroState): number {
@@ -286,8 +100,10 @@ export default function App() {
   const [taskInput, setTaskInput] = useState("");
   const [summaryRange, setSummaryRange] = useState<SummaryRange>("week");
   const [error, setError] = useState<string | null>(null);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
 
   const completingRef = useRef(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const focusStartedAtRef = useRef<string | null>(null);
   const sessionTaskIdRef = useRef<string | null>(null);
   const sessionFocusedSecondsRef = useRef<number | null>(null);
@@ -393,6 +209,9 @@ export default function App() {
     () => [...state.sessions].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()).slice(0, 12),
     [state.sessions]
   );
+  const [selectedSessionKeys, setSelectedSessionKeys] = useState<Set<string>>(() => new Set());
+  const selectedRecentCount = recentSessions.filter((session) => selectedSessionKeys.has(sessionKey(session))).length;
+  const allRecentSelected = recentSessions.length > 0 && selectedRecentCount === recentSessions.length;
 
   const focusedTodayMinutes = useMemo(() => {
     return todaySessions.reduce((sum, session) => sum + focusedMinutes(session), 0);
@@ -575,6 +394,44 @@ export default function App() {
     }
   }
 
+  function toggleSessionSelected(session: PomodoroSession) {
+    const key = sessionKey(session);
+    setSelectedSessionKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAllSessions() {
+    setSelectedSessionKeys(allRecentSelected ? new Set() : new Set(recentSessions.map(sessionKey)));
+  }
+
+  async function removeSelectedSessions() {
+    setError(null);
+    const targets = recentSessions.filter((session) => selectedSessionKeys.has(sessionKey(session)));
+    if (targets.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${targets.length} session${targets.length === 1 ? "" : "s"}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const next = await deleteSessions(targets.map(({ startedAt, endedAt }) => ({ startedAt, endedAt })));
+      setState(next);
+      setSelectedSessionKeys(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete sessions.");
+    }
+  }
+
   async function editSessionTask(session: PomodoroSession, taskId: string | null) {
     setError(null);
     try {
@@ -592,6 +449,45 @@ export default function App() {
       setState(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update auto-switch setting.");
+    }
+  }
+
+  function downloadBackup() {
+    setBackupMessage(null);
+    const blob = new Blob([exportData()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pomodoro-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function restoreBackup(file: File) {
+    setBackupMessage(null);
+    const confirmed = window.confirm(
+      "Importing replaces all tasks, sessions, and settings in this browser. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const next = await importData(await file.text());
+      setIsRunning(false);
+      setMode("focus");
+      focusStartedAtRef.current = null;
+      sessionTaskIdRef.current = null;
+      sessionFocusedSecondsRef.current = null;
+      setSelectedSessionKeys(new Set());
+      setState(next);
+      setTargetInput(String(next.targetPerDay));
+      setFocusInput(String(next.focusMinutes));
+      setRestInput(String(next.restMinutes));
+      setRemainingSeconds(durationFor("focus", next));
+      setBackupMessage(`Imported ${next.tasks.length} task(s) and ${next.sessions.length} session(s).`);
+    } catch (err) {
+      setBackupMessage(err instanceof Error ? err.message : "Failed to import backup.");
     }
   }
 
@@ -779,6 +675,27 @@ export default function App() {
             <span className="text-xs text-zinc-500">latest {recentSessions.length}</span>
           </div>
 
+          {recentSessions.length > 0 && (
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-rose-500"
+                  checked={allRecentSelected}
+                  onChange={toggleSelectAllSessions}
+                />
+                Select all
+              </label>
+              <Button
+                className="border-rose-800 bg-rose-950/50 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/60"
+                disabled={selectedRecentCount === 0}
+                onClick={() => void removeSelectedSessions()}
+              >
+                Delete selected ({selectedRecentCount})
+              </Button>
+            </div>
+          )}
+
           {recentSessions.length === 0 ? (
             <p className="text-sm text-zinc-500">No sessions yet.</p>
           ) : (
@@ -787,7 +704,13 @@ export default function App() {
                 const task = session.taskId ? taskById.get(session.taskId) ?? null : null;
                 return (
                   <div key={`${session.startedAt}-${session.endedAt}-${idx}`} className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm">
-                    <div className="text-zinc-300">
+                    <div className="flex items-center text-zinc-300">
+                      <input
+                        type="checkbox"
+                        className="mr-3 h-4 w-4 cursor-pointer accent-rose-500"
+                        checked={selectedSessionKeys.has(sessionKey(session))}
+                        onChange={() => toggleSessionSelected(session)}
+                      />
                       <span>{formatSessionStamp(session.startedAt)}</span>
                       <span className="px-2 text-zinc-600">{"->"}</span>
                       <span>{formatSessionStamp(session.endedAt)}</span>
@@ -822,6 +745,35 @@ export default function App() {
               })}
             </div>
           )}
+        </Card>
+
+        <Card className="space-y-3">
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-300">Backup</h2>
+          <p className="text-sm text-zinc-500">
+            Data is saved in this browser only. Export a backup to keep it safe or move it to another device.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button className="text-sm" onClick={downloadBackup}>
+              Export
+            </Button>
+            <Button className="text-sm" onClick={() => importInputRef.current?.click()}>
+              Import
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) {
+                  void restoreBackup(file);
+                }
+              }}
+            />
+          </div>
+          {backupMessage ? <p className="text-sm text-zinc-400">{backupMessage}</p> : null}
         </Card>
       </div>
     </main>
